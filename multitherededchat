@@ -1,0 +1,134 @@
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.io.*;
+import java.net.*;
+
+public class ChatClient {
+    private static final String SERVER_ADDRESS = "localhost";
+    private static final int SERVER_PORT = 12345;
+    
+    private Socket socket;
+    private BufferedReader in;
+    private PrintWriter out;
+    private String username;
+    
+    private JFrame frame = new JFrame("Chat Application");
+    private JTextField messageField = new JTextField(40);
+    private JTextArea messageArea = new JTextArea(15, 40);
+    private JTextArea userList = new JTextArea(15, 15);
+    
+    public ChatClient() {
+        // Configure GUI
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setSize(800, 400);
+        frame.setLayout(new BorderLayout());
+        
+        messageArea.setEditable(false);
+        userList.setEditable(false);
+        JScrollPane messageScroll = new JScrollPane(messageArea);
+        JScrollPane userScroll = new JScrollPane(userList);
+        
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.add(new JLabel("Chat"), BorderLayout.NORTH);
+        panel.add(messageScroll, BorderLayout.CENTER);
+        panel.add(userScroll, BorderLayout.EAST);
+        
+        JPanel inputPanel = new JPanel(new BorderLayout());
+        inputPanel.add(messageField, BorderLayout.CENTER);
+        inputPanel.add(new JButton(new SendAction()), BorderLayout.EAST);
+        
+        frame.add(panel, BorderLayout.CENTER);
+        frame.add(inputPanel, BorderLayout.SOUTH);
+    }
+    
+    public void start() {
+        frame.setVisible(true);
+        
+        try {
+            // Connect to server
+            socket = new Socket(SERVER_ADDRESS, SERVER_PORT);
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out = new PrintWriter(socket.getOutputStream(), true);
+            
+            // Handle username submission
+            while (true) {
+                String serverResponse = in.readLine();
+                if (serverResponse.equals("SUBMIT_USERNAME")) {
+                    username = JOptionPane.showInputDialog(
+                        frame,
+                        "Choose a username:",
+                        "Username selection",
+                        JOptionPane.PLAIN_MESSAGE
+                    );
+                    out.println(username);
+                } else if (serverResponse.equals("USERNAME_ACCEPTED")) {
+                    break;
+                } else if (serverResponse.equals("USERNAME_REJECTED")) {
+                    JOptionPane.showMessageDialog(
+                        frame,
+                        "Username already taken. Please choose another one.",
+                        "Error",
+                        JOptionPane.ERROR_MESSAGE
+                    );
+                }
+            }
+            
+            // Start listener thread
+            new Thread(new IncomingReader()).start();
+            
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(
+                frame,
+                "Cannot connect to server: " + e.getMessage(),
+                "Connection Error",
+                JOptionPane.ERROR_MESSAGE
+            );
+            System.exit(1);
+        }
+    }
+    
+    private class SendAction extends AbstractAction {
+        public SendAction() {
+            super("Send");
+        }
+        
+        public void actionPerformed(ActionEvent e) {
+            String message = messageField.getText();
+            if (!message.trim().isEmpty()) {
+                out.println(message);
+                messageField.setText("");
+            }
+        }
+    }
+    
+    private class IncomingReader implements Runnable {
+        public void run() {
+            try {
+                String message;
+                while ((message = in.readLine()) != null) {
+                    if (message.startsWith("USERLIST:")) {
+                        String users = message.substring(9);
+                        userList.setText("Connected Users:\n" + users.replaceAll(",", "\n"));
+                    } else {
+                        messageArea.append(message + "\n");
+                        messageArea.setCaretPosition(messageArea.getDocument().getLength());
+                    }
+                }
+            } catch (IOException e) {
+                JOptionPane.showMessageDialog(
+                    frame,
+                    "Connection to server lost: " + e.getMessage(),
+                    "Connection Error",
+                    JOptionPane.ERROR_MESSAGE
+                );
+                System.exit(1);
+            }
+        }
+    }
+    
+    public static void main(String[] args) {
+        ChatClient client = new ChatClient();
+        client.start();
+    }
+}
